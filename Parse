@@ -8,10 +8,12 @@ use Time::Local;
 
 my $kmtomile = 0.621371192;
 
-my $fs = $/;
-undef $/;
+# set the IFS - not needed as the JSON has no field separators
+#my $fs = $/;
+#undef $/;
+# suck in the JSON on stdin
 my $json = <STDIN>;
-$/ = $fs;
+#$/ = $fs;
 
 # clean up rogue periods from Moves Export data
 $json =~ s/\[,\{/\[\{/;
