@@ -1,0 +1,39 @@
+#!/opt/local/bin/perl -w
+
+use strict;
+use JSON;
+use Data::Dumper;
+
+my $kmtomile = 0.621371192;
+
+undef $/;
+my $json = <STDIN>;
+
+# clean up rogue periods
+$json =~ s/\[,\{/\[\{/;
+$json =~ s/\},\]/\}\]/;
+
+my $hash = decode_json($json);
+
+my $days = $hash->{export};
+#print Dumper(@stories);
+while (my $day = shift @$days) {
+	#print Dumper($day);
+	my $total = 0;
+	my $date = $day->{date};
+	#print "$date\n";
+	while (my $segment = shift @{$day->{segments}} ) {
+		next unless ($segment->{type} eq 'move');
+		#print $segment->{startTime} . "\n";
+		while (my $activities = shift @{$segment->{activities}}) {
+			next unless ($activities->{activity} eq "trp");
+			$total += $activities->{distance};
+			#print "distance = " . $activities->{distance} . "m\n";
+		}
+	}
+	# any transport today?
+	next unless $total;
+	my $km = $total / 1000;
+	my $miles = $km * $kmtomile;
+	printf "Daily total for %s: %.2fMiles (%.2fKm)\n", $date, $miles, $km;
+}
