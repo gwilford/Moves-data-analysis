@@ -1,0 +1,82 @@
+#!/opt/local/bin/perl -w
+
+use strict;
+use JSON;
+use Data::Dumper;
+use Finance::QIF;
+use Time::Local;
+
+my $kmtomile = 0.621371192;
+
+my $fs = $/;
+undef $/;
+my $json = <STDIN>;
+$/ = $fs;
+
+# clean up rogue periods from Moves Export data
+$json =~ s/\[,\{/\[\{/;
+$json =~ s/\},\]/\}\]/;
+
+my $hash = decode_json($json);
+
+my $out = Finance::QIF->new(file => ">-",);
+my $header = "Type:Bank";
+$out->header($header);
+
+my $days = $hash->{export};
+#print Dumper(@stories);
+while (my $day = shift @$days) {
+	#print Dumper($day);
+	my $total = 0;
+	# trp range
+	my $start = 999999;
+	my $end = 0;
+
+	#print "$date\n";
+	while (my $segment = shift @{$day->{segments}} ) {
+		next unless ($segment->{type} eq 'move');
+		#print $segment->{startTime} . "\n";
+		# YYYYMMDDTHHMMSSZ
+		#$segment->{endTime};
+		while (my $activity = shift @{$segment->{activities}}) {
+			next unless ($activity->{activity} eq "trp");
+			$total += $activity->{distance};
+			#print "distance = " . $activities->{distance} . "m\n";
+			# earliest start - latest end
+			$activity->{startTime} =~ /\d{6}T(\d{6})Z/;
+			$start = $1 if ($1 < $start);
+			$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
+			$end = $1 if ($1 > $end);
+		}
+	}
+
+	# any transport today?
+	next unless $total;
+
+	#my $movesdate = $day->{date};
+	#die "'$movesdate'" unless ($movesdate =~ /^(\d{4})(\d{2})(\d{2})$/);
+	my $datestart = $day->{date} . $start;
+	die "'$datestart'" unless ($datestart =~ /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+	my $qifdate = "$3/$2/$1";
+	#my $wday = (localtime(timelocal(0,0,0,$3,$2-1,$1)))[6];
+	#my $date = localtime(timelocal(0,0,0,$3,$2-1,$1));
+	my $date = localtime(timelocal($6,$5,$4,$3,$2-1,$1));
+
+	my $km = $total / 1000;
+	my $miles = $km * $kmtomile;
+
+	my $record = {
+		header => $header,
+		date => $qifdate,
+		transaction => $miles,
+		total => $miles,
+		#status => ,
+		payee => 'Drive',
+		memo => 'From Moves Export data',
+		category => 'Automotive:Fuel:Miles',
+	};
+	#$out->write($record);
+	#printf "Daily total for %s-%d: %.2fMiles (%.2fKm)\n", $date, $wday, $miles, $km;
+	printf "%s (%06d-%06d): %6.2f miles (%6.2f Km)\n", $date, $start, $end, $miles, $km;
+}
+$out->close;
