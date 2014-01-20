@@ -16,17 +16,21 @@ my $json = <STDIN>;
 #$/ = $fs;
 
 # clean up rogue periods from Moves Export data
-$json =~ s/\[,\{/\[\{/;
-$json =~ s/\},\]/\}\]/;
+$json =~ s/\[,\{/\[\{/; # at start
+$json =~ s/\},\]/\}\]/; # at end
 
+# translate the JSON into a multi-level perl structure
 my $hash = decode_json($json);
 
+# Init the QIF in stdout
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
 $out->header($header);
 
+# Parse the Moves data structure
+# Pull out and sum-up the daily transport distances
 my $days = $hash->{export};
-#print Dumper(@stories);
+#print Dumper(@$days);
 while (my $day = shift @$days) {
 	#print Dumper($day);
 	my $total = 0;
@@ -36,14 +40,18 @@ while (my $day = shift @$days) {
 
 	#print "$date\n";
 	while (my $segment = shift @{$day->{segments}} ) {
+		# Is this a move entry?
 		next unless ($segment->{type} eq 'move');
+
 		#print $segment->{startTime} . "\n";
 		# YYYYMMDDTHHMMSSZ
 		#$segment->{endTime};
 		while (my $activity = shift @{$segment->{activities}}) {
+			# Is this a transport entry?
 			next unless ($activity->{activity} eq "trp");
+
 			$total += $activity->{distance};
-			#print "distance = " . $activities->{distance} . "m\n";
+
 			# earliest start - latest end
 			$activity->{startTime} =~ /\d{6}T(\d{6})Z/;
 			$start = $1 if ($1 < $start);
@@ -67,6 +75,7 @@ while (my $day = shift @$days) {
 	my $km = $total / 1000;
 	my $miles = $km * $kmtomile;
 
+	# create a QIF transaction
 	my $record = {
 		header => $header,
 		date => $qifdate,
@@ -77,8 +86,11 @@ while (my $day = shift @$days) {
 		memo => 'From Moves Export data',
 		category => 'Automotive:Fuel:Miles',
 	};
+	# write out the QIF transaction
 	#$out->write($record);
+
 	#printf "Daily total for %s-%d: %.2fMiles (%.2fKm)\n", $date, $wday, $miles, $km;
 	printf "%s (%06d-%06d): %6.2f miles (%6.2f Km)\n", $date, $start, $end, $miles, $km;
 }
+# close the QIF
 $out->close;
