@@ -79,18 +79,18 @@ while (my $day = shift @$days) {
 	my $record = {
 		header => $header,
 		date => $qifdate,
-		transaction => $miles,
-		total => $miles,
+		transaction => sprintf("%.2f", $miles),
+		#total => $miles,
 		#status => ,
 		payee => 'Drive',
 		memo => 'From Moves Export data',
 		category => 'Automotive:Fuel:Miles',
 	};
 	# write out the QIF transaction
-	#$out->write($record);
+	$out->write($record);
 
 	#printf "Daily total for %s-%d: %.2fMiles (%.2fKm)\n", $date, $wday, $miles, $km;
-	printf "%s (%06d-%06d): %6.2f miles (%6.2f Km)\n", $date, $start, $end, $miles, $km;
+	#printf "%s (%06d-%06d): %6.2f miles (%6.2f Km)\n", $date, $start, $end, $miles, $km;
 }
 # close the QIF
 $out->close;
