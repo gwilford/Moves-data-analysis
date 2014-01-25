@@ -5,8 +5,19 @@ use JSON;
 use Data::Dumper;
 use Finance::QIF;
 use Time::Local;
+use Getopt::Std;
 
 my $kmtomile = 0.621371192;
+
+sub usage {
+	die "Usage: $0 [ -q ] [ -s start ] [ -e end ] [ -d days ]\n" .
+	    "       -q: QIF output\n" .
+	    "       -s|-e: restrict time range to start/end in YYYYMMDD format\n" .
+	    "       -d: only match <days> of the week regex\n";
+}
+
+our($opt_q, $opt_s, $opt_e, $opt_d);
+getopts('qs:e:d:') || usage();
 
 # set the IFS - not needed as the JSON has no field separators
 #my $fs = $/;
@@ -25,7 +36,9 @@ my $hash = decode_json($json);
 # Init the QIF in stdout
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
-$out->header($header);
+if ($opt_q) {
+	$out->header($header);
+}
 
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
@@ -75,6 +88,12 @@ while (my $day = shift @$days) {
 	my $km = $total / 1000;
 	my $miles = $km * $kmtomile;
 
+	if (!$opt_q) {
+		#printf "Daily total for %s-%d: %.2fMiles (%.2fKm)\n", $date, $wday, $miles, $km;
+		printf "%s (-%06d): %6.2f miles (%6.2f Km)\n", $date, $end, $miles, $km;
+		next;
+	}
+
 	# create a QIF transaction
 	my $record = {
 		header => $header,
@@ -89,8 +108,6 @@ while (my $day = shift @$days) {
 	# write out the QIF transaction
 	$out->write($record);
 
-	#printf "Daily total for %s-%d: %.2fMiles (%.2fKm)\n", $date, $wday, $miles, $km;
-	#printf "%s (%06d-%06d): %6.2f miles (%6.2f Km)\n", $date, $start, $end, $miles, $km;
 }
 # close the QIF
-$out->close;
+$out->close if ($opt_q);
