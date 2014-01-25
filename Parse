@@ -21,7 +21,7 @@ sub usage {
 }
 
 our($opt_q, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
-getopts('qs:e:d:x"y:') || usage();
+getopts('qs:e:d:x:y:') || usage();
 
 # set the IFS - not needed as the JSON has no field separators
 #my $fs = $/;
