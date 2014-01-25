@@ -8,6 +8,7 @@ use Time::Local;
 use Getopt::Std;
 
 my $kmtomile = 0.621371192;
+my @wdays = qw(sun mon tue wed thu fri sat);
 
 sub usage {
 	die "Usage: $0 [ -q ] [ -s start ] [ -e end ] [ -d days ]\n" .
@@ -74,16 +75,22 @@ while (my $day = shift @$days) {
 	}
 
 	# any transport today?
-	next unless $total;
+	next unless ($total);
+	# within date range?
+	next unless (!$opt_s || ($day->{date} ge $opt_s));
+	next unless (!$opt_e || ($day->{date} le $opt_e));
 
 	#my $movesdate = $day->{date};
 	#die "'$movesdate'" unless ($movesdate =~ /^(\d{4})(\d{2})(\d{2})$/);
 	my $datestart = $day->{date} . $start;
 	die "'$datestart'" unless ($datestart =~ /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
 	my $qifdate = "$3/$2/$1";
-	#my $wday = (localtime(timelocal(0,0,0,$3,$2-1,$1)))[6];
+	my $wday = (localtime(timelocal(0,0,0,$3,$2-1,$1)))[6];
 	#my $date = localtime(timelocal(0,0,0,$3,$2-1,$1));
 	my $date = localtime(timelocal($6,$5,$4,$3,$2-1,$1));
+
+	# matches day(s) of week?
+	next unless (!$opt_d || $wdays[$wday] =~ /$opt_d/i);
 
 	my $km = $total / 1000;
 	my $miles = $km * $kmtomile;
