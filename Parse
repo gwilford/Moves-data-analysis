@@ -17,7 +17,7 @@ sub usage {
 	    "       -s: ignore dates before YYYYMMDD\n" .
 	    "       -e: ignore dates after YYYYMMDD\n" .
 	    "       -x: ignore activities starting before HHMMSS on any day\n" .
-	    "       -y: ignore activities ending after HHMMSS on any day\n" .
+	    "       -y: ignore activities starting after HHMMSS on any day\n" .
 	    "       -d: ignore days of the week not matching <days_regex>\n";
 }
 
@@ -80,10 +80,10 @@ while (my $day = shift @$days) {
 			# earliest start - latest end
 			$activity->{startTime} =~ /\d{6}T(\d{6})Z/;
 			next unless (!$opt_x || $1 ge $opt_x);
+			next unless (!$opt_y || $1 le $opt_y);
 			$start = $1 if ($1 < $start);
 
 			$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
-			next unless (!$opt_y || $1 le $opt_y);
 			$end = $1 if ($1 > $end);
 
 			$total += $activity->{distance};
