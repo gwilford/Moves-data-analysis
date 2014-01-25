@@ -11,14 +11,17 @@ my $kmtomile = 0.621371192;
 my @wdays = qw(sun mon tue wed thu fri sat);
 
 sub usage {
-	die "Usage: $0 [ -q ] [ -s start ] [ -e end ] [ -d days ]\n" .
-	    "       -q: QIF output\n" .
-	    "       -s|-e: restrict time range to start/end in YYYYMMDD format\n" .
-	    "       -d: only match <days> of the week regex\n";
+	die "Usage: $0 [ -q ] [ -s|e YYYYMMDD ] [ -x|y HHMMSS ] [ -d days_regex ]\n" .
+	    "       -q: output QIF instead of daily summary\n" .
+	    "       -s: ignore dates before YYYYMMDD\n" .
+	    "       -e: ignore dates after YYYYMMDD\n" .
+	    "       -x: ignore activities starting before HHMMSS on any day\n" .
+	    "       -y: ignore activities ending after HHMMSS on any day\n" .
+	    "       -d: ignore days of the week not matching <days_regex>\n";
 }
 
-our($opt_q, $opt_s, $opt_e, $opt_d);
-getopts('qs:e:d:') || usage();
+our($opt_q, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
+getopts('qs:e:d:x"y:') || usage();
 
 # set the IFS - not needed as the JSON has no field separators
 #my $fs = $/;
@@ -34,21 +37,22 @@ $json =~ s/\},\]/\}\]/; # at end
 # translate the JSON into a multi-level perl structure
 my $hash = decode_json($json);
 
-# Init the QIF in stdout
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
 if ($opt_q) {
+	# Init the QIF on stdout
 	$out->header($header);
 }
 
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
 my $days = $hash->{export};
+
 #print Dumper(@$days);
 while (my $day = shift @$days) {
 	#print Dumper($day);
 	my $total = 0;
-	# trp range
+	# trp time range in HHMMSS
 	my $start = 999999;
 	my $end = 0;
 
@@ -64,21 +68,24 @@ while (my $day = shift @$days) {
 			# Is this a transport entry?
 			next unless ($activity->{activity} eq "trp");
 
-			$total += $activity->{distance};
-
 			# earliest start - latest end
 			$activity->{startTime} =~ /\d{6}T(\d{6})Z/;
+			next unless (!$opt_x || $1 ge $opt_x);
 			$start = $1 if ($1 < $start);
+
 			$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
+			next unless (!$opt_y || $1 le $opt_y);
 			$end = $1 if ($1 > $end);
+
+			$total += $activity->{distance};
 		}
 	}
 
 	# any transport today?
 	next unless ($total);
 	# within date range?
-	next unless (!$opt_s || ($day->{date} ge $opt_s));
-	next unless (!$opt_e || ($day->{date} le $opt_e));
+	next unless (!$opt_s || $day->{date} ge $opt_s);
+	next unless (!$opt_e || $day->{date} le $opt_e);
 
 	#my $movesdate = $day->{date};
 	#die "'$movesdate'" unless ($movesdate =~ /^(\d{4})(\d{2})(\d{2})$/);
