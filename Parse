@@ -65,7 +65,10 @@ while (my $day = shift @$days) {
 	my $start = 235959;
 	my $end = 0;
 
-	#print "$date\n";
+	# within date range?
+	next unless (!$opt_s || $day->{date} ge $opt_s);
+	next unless (!$opt_e || $day->{date} le $opt_e);
+
 	while (my $segment = shift @{$day->{segments}} ) {
 		# Is this a move entry?
 		next unless ($segment->{type} eq 'move');
@@ -77,12 +80,13 @@ while (my $day = shift @$days) {
 			# Is this a transport entry?
 			next unless ($activity->{activity} eq "trp");
 
-			# earliest start - latest end
+			# earliest start...
 			$activity->{startTime} =~ /\d{6}T(\d{6})Z/;
 			next unless (!$opt_x || $1 ge $opt_x);
 			next unless (!$opt_y || $1 le $opt_y);
 			$start = $1 if ($1 < $start);
 
+			# ...to latest end
 			$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
 			$end = $1 if ($1 > $end);
 
@@ -92,17 +96,11 @@ while (my $day = shift @$days) {
 
 	# any transport today?
 	next unless ($total);
-	# within date range?
-	next unless (!$opt_s || $day->{date} ge $opt_s);
-	next unless (!$opt_e || $day->{date} le $opt_e);
 
-	#my $movesdate = $day->{date};
-	#die "'$movesdate'" unless ($movesdate =~ /^(\d{4})(\d{2})(\d{2})$/);
 	my $datestart = $day->{date} . $start;
 	die "'$datestart'" unless ($datestart =~ /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
 	my $qifdate = "$3/$2/$1";
 	my $wday = (localtime(timelocal(0,0,0,$3,$2-1,$1)))[6];
-	#my $date = localtime(timelocal(0,0,0,$3,$2-1,$1));
 	my $date = localtime(timelocal($6,$5,$4,$3,$2-1,$1));
 
 	# matches day(s) of week?
@@ -113,7 +111,6 @@ while (my $day = shift @$days) {
 	$miles_tot += $miles;
 
 	if (!$opt_q) {
-		#printf "Daily total for %s-%d: %.2fMiles (%.2fKm)\n", $date, $wday, $miles, $km;
 		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $date, hm($start), hm($end), $miles, $km;
 		next;
 	}
@@ -123,12 +120,8 @@ while (my $day = shift @$days) {
 		header => $header,
 		date => $qifdate,
 		transaction => sprintf("%.2f", $miles),
-		#total => $miles,
-		#status => ,
 		payee => "Driving between " . hm($start) . " and " . hm($end),
-		#memo => 'From Moves Export data',
 		memo => $arg_string,
-		#category => 'Automotive:Fuel:Miles',
 		category => '_Unaccounted',
 	};
 	# write out the QIF transaction
