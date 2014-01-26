@@ -12,8 +12,9 @@ my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
 my $miles_tot = 0;
 
 sub usage {
-	die "Usage: $0 [ -i ] [ -s|e YYYYMMDD ] [ -x|y HHMMSS ] [ -d days_regex ]\n" .
+	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ] [ -x|y <HHMMSS> ] [ -d <days_regex> ]\n" .
 	    "       -i: output daily summary instead of QIF\n" .
+	    "       -p: add freeform <text> to QIF memo\n" .
 	    "       -s: ignore dates before YYYYMMDD\n" .
 	    "       -e: ignore dates after YYYYMMDD\n" .
 	    "       -x: ignore activities starting before HHMMSS on any day\n" .
@@ -29,8 +30,8 @@ sub hm {
 }
 
 my $memo = " (" . join(' ', @ARGV) . ")";
-our($opt_i, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
-getopts('is:e:d:x:y:') || usage();
+our($opt_i, $opt_p, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
+getopts('ip:s:e:d:x:y:') || usage();
 
 # set the IFS - not needed as the JSON has no field separators
 #my $fs = $/;
@@ -48,6 +49,7 @@ my $hash = decode_json($json);
 
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
+my $payee = "Driving";
 unless ($opt_i) {
 	# Init the QIF on stdout
 	$out->header($header);
@@ -120,7 +122,7 @@ while (my $day = shift @$days) {
 		header => $header,
 		date => $qifdate,
 		transaction => sprintf("%.2f", $miles),
-		payee => "Driving",
+		payee => $payee,
 		memo => hm($start) . "-" . hm($end) . $memo,
 		category => '[Metered asset:Fuel Tank]',
 	};
