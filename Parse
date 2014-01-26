@@ -46,9 +46,7 @@ $json =~ s/\},\]/\}\]/; # at end
 
 # translate the JSON into a multi-level perl structure
 sub moves_json {
-	no warnings;
-	no strict;
-	use JSON;
+	use JSON "decode_json";
 	return decode_json($json);
 }
 my $hash = moves_json();
