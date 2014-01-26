@@ -1,7 +1,7 @@
-#!/opt/local/bin/perl -w
+#!/opt/local/bin/perl
 
 use strict;
-use JSON;
+use warnings;
 use Data::Dumper;
 use Finance::QIF;
 use Time::Local;
@@ -45,7 +45,13 @@ $json =~ s/\[,\{/\[\{/; # at start
 $json =~ s/\},\]/\}\]/; # at end
 
 # translate the JSON into a multi-level perl structure
-my $hash = decode_json($json);
+sub moves_json {
+	no warnings;
+	no strict;
+	use JSON;
+	return decode_json($json);
+}
+my $hash = moves_json();
 
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
