@@ -57,10 +57,6 @@ my $hash = moves_json();
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
 my $payee = "Driving";
-unless ($opt_i) {
-	# Init the QIF on stdout
-	$out->header($header);
-}
 my $category = '[Metered consumables:Fuel Tank]';
 
 # Parse the Moves data structure
@@ -115,6 +111,9 @@ while (my $day = shift @$days) {
 
 	# matches day(s) of week?
 	next unless (!$opt_d || $wdays[$wday] =~ /$opt_d/i);
+
+	# issue a header line if we haven't already done so
+	$out->header($header) unless ($opt_i || $miles_tot);
 
 	my $km = $total / 1000;
 	my $miles = $km * $kmtomile;
