@@ -58,6 +58,7 @@ unless ($opt_i) {
 	# Init the QIF on stdout
 	$out->header($header);
 }
+my $category = '[Metered consumables:Fuel Tank]';
 
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
@@ -128,7 +129,7 @@ while (my $day = shift @$days) {
 		transaction => sprintf("%.3f", $miles),
 		payee => $payee,
 		memo => hm($start) . "-" . hm($end) . $memo,
-		category => '[Metered asset:Fuel Tank]',
+		category => $category,
 	};
 	# write out the QIF transaction
 	$out->write($record);
