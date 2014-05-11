@@ -44,6 +44,9 @@ my $json = <STDIN>;
 $json =~ s/\[,\{/\[\{/; # at start
 $json =~ s/\},\]/\}\]/; # at end
 
+# remove double periods
+$json =~ s/,,/,/;
+
 # translate the JSON into a multi-level perl structure
 sub moves_json {
 	use JSON "decode_json";
