@@ -6,6 +6,7 @@ use Data::Dumper;
 use Finance::QIF;
 use Time::Local;
 use Getopt::Std;
+use POSIX qw(strftime);
 
 my $kmtomile = 0.621371192;
 my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
@@ -87,14 +88,20 @@ while (my $day = shift @$days) {
 			next unless ($activity->{activity} eq "trp");
 
 			# earliest start...
-			$activity->{startTime} =~ /\d{6}T(\d{6})Z/;
-			next unless (!$opt_x || $1 ge $opt_x);
-			next unless (!$opt_y || $1 le $opt_y);
-			$start = $1 if ($1 < $start);
+			#$activity->{startTime} =~ /T(\d{6})Z/;
+			$activity->{startTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
+			#my $tm = join('', (localtime(timegm($6, $5, $4, $3, $2-1, $1)))[2,1,0]);
+			my $stm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
+			#print STDERR $tm . "\n";
+			next unless (!$opt_x || $stm ge $opt_x);
+			next unless (!$opt_y || $stm le $opt_y);
+			$start = $stm if ($stm < $start);
 
 			# ...to latest end
-			$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
-			$end = $1 if ($1 > $end);
+			#$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
+			$activity->{endTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
+			my $etm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
+			$end = $etm if ($etm > $end);
 
 			$total += $activity->{distance};
 		}
@@ -106,8 +113,8 @@ while (my $day = shift @$days) {
 	my $datestart = $day->{date} . $start;
 	die "'$datestart'" unless ($datestart =~ /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
 	my $qifdate = "$3/$2/$1";
-	my $wday = (localtime(timelocal(0,0,0,$3,$2-1,$1)))[6];
-	my $date = localtime(timelocal($6,$5,$4,$3,$2-1,$1));
+	my $wday = (localtime(timegm(0,0,0,$3,$2-1,$1)))[6];
+	my $date = localtime(timegm($6,$5,$4,$3,$2-1,$1));
 
 	# matches day(s) of week?
 	next unless (!$opt_d || $wdays[$wday] =~ /$opt_d/i);
