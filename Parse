@@ -80,25 +80,21 @@ while (my $day = shift @$days) {
 		# Is this a move entry?
 		next unless ($segment->{type} eq 'move');
 
-		#print $segment->{startTime} . "\n";
-		# YYYYMMDDTHHMMSSZ
-		#$segment->{endTime};
+		# Moves time format is <YYYY><MM><DD>T<HH><MM><SS>Z
 		while (my $activity = shift @{$segment->{activities}}) {
 			# Is this a transport entry?
 			next unless ($activity->{activity} eq "trp");
 
 			# earliest start...
-			#$activity->{startTime} =~ /T(\d{6})Z/;
 			$activity->{startTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
-			#my $tm = join('', (localtime(timegm($6, $5, $4, $3, $2-1, $1)))[2,1,0]);
 			my $stm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
-			#print STDERR $tm . "\n";
 			next unless (!$opt_x || $stm ge $opt_x);
 			next unless (!$opt_y || $stm le $opt_y);
+			# could we explicitly set $start = strftime(...) ??
+			# only if start times are always progressive...
 			$start = $stm if ($stm < $start);
 
 			# ...to latest end
-			#$activity->{endTime} =~ /\d{6}T(\d{6})Z/;
 			$activity->{endTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
 			my $etm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
 			$end = $etm if ($etm > $end);
