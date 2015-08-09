@@ -46,7 +46,7 @@ $json =~ s/\[,\{/\[\{/; # at start
 $json =~ s/\},\]/\}\]/; # at end
 
 # remove double periods
-$json =~ s/,,/,/;
+$json =~ s/,,/,/g;
 
 # translate the JSON into a multi-level perl structure
 sub moves_json {
