@@ -34,12 +34,12 @@ my $memo = " (" . join(' ', @ARGV) . ")";
 our($opt_i, $opt_p, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
 getopts('ip:s:e:d:x:y:') || usage();
 
-# set the IFS - not needed as the JSON has no field separators
-#my $fs = $/;
-#undef $/;
+# set the IFS (required for human-readable JSON data sources)
+my $fs = $/;
+undef $/;
 # suck in the JSON on stdin
 my $json = <STDIN>;
-#$/ = $fs;
+$/ = $fs;
 
 # clean up rogue periods from Moves Export data
 $json =~ s/\[,\{/\[\{/; # at start
@@ -62,7 +62,14 @@ my $category = '[Metered consumables:Fuel Tank]';
 
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
-my $days = $hash->{export};
+my $days;
+if (ref $hash eq "HASH") {
+	# moves-export.herokuapp.com
+	$days = $hash->{export};
+} else {
+	# www.moves-export.com
+	$days = $hash;
+}
 
 #print Dumper(@$days);
 while (my $day = shift @$days) {
@@ -83,10 +90,11 @@ while (my $day = shift @$days) {
 		# Moves time format is <YYYY><MM><DD>T<HH><MM><SS>Z
 		while (my $activity = shift @{$segment->{activities}}) {
 			# Is this a transport entry?
-			next unless ($activity->{activity} eq "trp");
+			next unless ($activity->{activity} eq "trp" ||
+				     $activity->{activity} eq "transport");
 
 			# earliest start...
-			$activity->{startTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
+			$activity->{startTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|\+|\-)/;
 			my $stm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
 			next unless (!$opt_x || $stm ge $opt_x);
 			next unless (!$opt_y || $stm le $opt_y);
@@ -95,7 +103,7 @@ while (my $day = shift @$days) {
 			$start = $stm if ($stm < $start);
 
 			# ...to latest end
-			$activity->{endTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/;
+			$activity->{endTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|\+|\-)/;
 			my $etm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
 			$end = $etm if ($etm > $end);
 
