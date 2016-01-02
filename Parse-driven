@@ -1,0 +1,168 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use Finance::QIF;
+use Time::Local;
+use Getopt::Std;
+use POSIX qw(strftime);
+
+my $kmtomile = 0.621371192;
+my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
+my $miles_tot = 0;
+
+sub usage {
+	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ] [ -x|y <HHMMSS> ] [ -d <days_regex> ]\n" .
+	    "       -i: output daily summary instead of QIF\n" .
+	    "       -p: add freeform <text> to QIF memo\n" .
+	    "       -s: ignore dates before YYYYMMDD\n" .
+	    "       -e: ignore dates after YYYYMMDD\n" .
+	    "       -x: ignore activities starting before HHMMSS on any day\n" .
+	    "       -y: ignore activities starting after HHMMSS on any day\n" .
+	    "       -d: ignore days of the week not matching <days_regex>\n";
+}
+
+# pretty-print the time
+sub hm {
+	my $t = $_[0];
+	return "no_time" unless $t =~ /^(\d\d)(\d\d)(\d\d)$/;
+	return "$1:$2";
+}
+
+my $memo = " (" . join(' ', @ARGV) . ")";
+our($opt_i, $opt_p, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
+getopts('ip:s:e:d:x:y:') || usage();
+
+# set the IFS (required for human-readable JSON data sources)
+my $fs = $/;
+undef $/;
+# suck in the JSON on stdin
+my $json = <STDIN>;
+$/ = $fs;
+
+# clean up rogue periods from Moves Export data
+$json =~ s/\[,\{/\[\{/; # at start
+$json =~ s/\},\]/\}\]/; # at end
+
+# remove double periods
+$json =~ s/,,/,/g;
+
+# translate the JSON into a multi-level perl structure
+sub moves_json {
+	use JSON "decode_json";
+	return decode_json($json);
+}
+my $hash = moves_json();
+
+my $out = Finance::QIF->new(file => ">-",);
+my $header = "Type:Bank";
+my $payee = "Driving";
+my $category = '[Metered consumables:Fuel Tank]';
+
+# Parse the Moves data structure
+# Pull out and sum-up the daily transport distances
+my $days;
+#print Dumper($hash);
+#exit;
+#if (ref $hash eq "HASH") {
+#	# moves-export.herokuapp.com
+#	$days = $hash->{export};
+#} else {
+	# www.moves-export.com
+#	$days = $hash;
+#}
+
+#print Dumper($days);
+#exit;
+#while (my $day = shift @$days) {
+my $day;
+foreach(sort keys $hash) {
+	if (ref $hash->{$_} eq "ARRAY") {
+		$day = shift $hash->{$_};
+	} else {
+		print Dumper($hash->{$_});
+		next;
+	}
+
+	#print Dumper($day);
+	my $total = 0;
+	# trp time range in HHMMSS
+	my $start = 235959;
+	my $end = 0;
+
+	# within date range?
+	next unless (!$opt_s || $day->{date} ge $opt_s);
+	next unless (!$opt_e || $day->{date} le $opt_e);
+
+	while (my $segment = shift @{$day->{segments}} ) {
+		# Is this a move entry?
+		next unless ($segment->{type} eq 'move');
+
+		# Moves time format is <YYYY><MM><DD>T<HH><MM><SS>Z
+		while (my $activity = shift @{$segment->{activities}}) {
+			# Is this a transport entry?
+			next unless ($activity->{activity} eq "trp" ||
+				     $activity->{activity} eq "transport");
+
+			# earliest start...
+			$activity->{startTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|\+|\-)/;
+			my $stm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
+			next unless (!$opt_x || $stm ge $opt_x);
+			next unless (!$opt_y || $stm le $opt_y);
+			# could we explicitly set $start = strftime(...) ??
+			# only if start times are always progressive...
+			$start = $stm if ($stm < $start);
+
+			# ...to latest end
+			$activity->{endTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|\+|\-)/;
+			my $etm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
+			$end = $etm if ($etm > $end);
+
+			$total += $activity->{distance};
+		}
+	}
+
+	# any transport today?
+	next unless ($total);
+
+	my $datestart = $day->{date} . $start;
+	die "'$datestart'" unless ($datestart =~ /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+	my $qifdate = "$3/$2/$1";
+	my $wday = (localtime(timegm(0,0,0,$3,$2-1,$1)))[6];
+	my $date = localtime(timegm($6,$5,$4,$3,$2-1,$1));
+
+	# matches day(s) of week?
+	next unless (!$opt_d || $wdays[$wday] =~ /$opt_d/i);
+
+	# issue a header line if we haven't already done so
+	$out->header($header) unless ($opt_i || $miles_tot);
+
+	my $km = $total / 1000;
+	my $miles = $km * $kmtomile;
+	$miles_tot += $miles;
+
+	if ($opt_i) {
+		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $date, hm($start), hm($end), $miles, $km;
+		next;
+	}
+
+	# create a QIF transaction
+	my $record = {
+		header => $header,
+		date => $qifdate,
+		transaction => sprintf("%.3f", $miles),
+		payee => $payee,
+		memo => hm($start) . "-" . hm($end) . $memo,
+		category => $category,
+	};
+	# write out the QIF transaction
+	$out->write($record);
+
+}
+# close the QIF
+if ($opt_i) {
+	printf "Total miles travelled during period:     %6.2f\n", $miles_tot;
+} else {
+	$out->close;
+}
