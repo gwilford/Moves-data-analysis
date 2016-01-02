@@ -62,20 +62,6 @@ my $category = '[Metered consumables:Fuel Tank]';
 
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
-my $days;
-#print Dumper($hash);
-#exit;
-#if (ref $hash eq "HASH") {
-#	# moves-export.herokuapp.com
-#	$days = $hash->{export};
-#} else {
-	# www.moves-export.com
-#	$days = $hash;
-#}
-
-#print Dumper($days);
-#exit;
-#while (my $day = shift @$days) {
 my $day;
 foreach(sort keys $hash) {
 	if (ref $hash->{$_} eq "ARRAY") {
