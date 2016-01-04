@@ -44,40 +44,39 @@ sub build_blackout {
 	# drop the header row
 	<$data>;
 	while (<$data>) {
-		#chomp;
 		s/\s+$//;
 		my @fields = split(',');
 
-		#print Dumper($fields[6]) . "\n";
 		# notes, who, DoW, start time, start date, end time, end date
-		# FIXME what happens when the time is unset?
+		my $dow = $fields[2];
 		my $time1 = $fields[3] ? "T" . $fields[3] : '';
-		my $time2 = $fields[5] ? "T" . $fields[5] : '';
+		my $time2 = $fields[5] ? "T" . $fields[5] : 'T23:59:59';
 		my $dt1 = $parse->parse_datetime($fields[4] . $time1);
-		my $dt2 = $parse->parse_datetime($fields[6] . $time2);
+		my $dt2 = $parse->parse_datetime($fields[4] . $time2);
+		my $dt3 = $parse->parse_datetime($fields[6] . $time1);
+
 		do {
 			# does this date match DoW?
-			next unless($dt1->day_abbr() =~ /$fields[2]/i);
-			# FIXME this screw up the start/end times
-			push @$span, DateTime::Span->from_datetimes(start => $dt1, end => $dt1);
-			#print Dumper(DateTime::Span->from_datetimes(start => $dt1, end => $dt1));
+			next unless(!$dow || $dt1->day_abbr() =~ /$dow/i);
+			push @$span, DateTime::Span->from_datetimes(start => $dt1->clone(), 
+								    end   => $dt2->clone());
 			# cycle days in each dates range
-		} until ($dt1->add(days => 1) > $dt2);
+			$dt1->add(days => 1);
+			$dt2->add(days => 1);
+		} until ($dt2 > $dt3);
 	}
 	close($data);
 
 	# FIXME need to manage different who's
 	$spanset_bfilter = DateTime::SpanSet->from_spans(spans => $span);
+
 	#print Dumper($spanset_bfilter->as_list);
-
 	my $iter = $spanset_bfilter->iterator;
-           while ( my $dt = $iter->next ) {
-               # $dt is a DateTime::Span
-               print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
-           }
+	while (my $dt = $iter->next) {
+		# $dt is a DateTime::Span
+		print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
+        }
 }
-
-# use DateTime::Span and DateTime::SpanSet to define all of the blackout SpanSets per user
 
 # pretty-print the time
 sub hm {
@@ -87,6 +86,7 @@ sub hm {
 }
 
 # FIXME
+# use DateTime::Span and DateTime::SpanSet to define all of the blackout SpanSets per user
 build_blackout();
 exit;
 
