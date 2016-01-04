@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/opt/local/bin/perl
 
 use strict;
 use warnings;
@@ -8,9 +8,16 @@ use Time::Local;
 use Getopt::Std;
 use POSIX qw(strftime);
 
+use DateTime;
+use DateTime::Span;
+use DateTime::SpanSet;
+use DateTime::Format::Strptime;
+use DateTime::Format::ISO8601;
+
 my $kmtomile = 0.621371192;
 my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
 my $miles_tot = 0;
+my $spanset_bfilter;
 
 sub usage {
 	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ] [ -x|y <HHMMSS> ] [ -d <days_regex> ]\n" .
@@ -23,12 +30,65 @@ sub usage {
 	    "       -d: ignore days of the week not matching <days_regex>\n";
 }
 
+sub build_blackout {
+	#my $parse = DateTime::Format::Strptime->new(
+	#	pattern => '%F %T',
+	#	on_error => 'croak',
+	#);
+	my $parse = DateTime::Format::ISO8601->new;
+
+	my $file = "blackout.csv";
+	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
+ 	
+	my $span;
+	# drop the header row
+	<$data>;
+	while (<$data>) {
+		#chomp;
+		s/\s+$//;
+		my @fields = split(',');
+
+		#print Dumper($fields[6]) . "\n";
+		# notes, who, DoW, start time, start date, end time, end date
+		# FIXME what happens when the time is unset?
+		my $time1 = $fields[3] ? "T" . $fields[3] : '';
+		my $time2 = $fields[5] ? "T" . $fields[5] : '';
+		my $dt1 = $parse->parse_datetime($fields[4] . $time1);
+		my $dt2 = $parse->parse_datetime($fields[6] . $time2);
+		do {
+			# does this date match DoW?
+			next unless($dt1->day_abbr() =~ /$fields[2]/i);
+			# FIXME this screw up the start/end times
+			push @$span, DateTime::Span->from_datetimes(start => $dt1, end => $dt1);
+			#print Dumper(DateTime::Span->from_datetimes(start => $dt1, end => $dt1));
+			# cycle days in each dates range
+		} until ($dt1->add(days => 1) > $dt2);
+	}
+	close($data);
+
+	# FIXME need to manage different who's
+	$spanset_bfilter = DateTime::SpanSet->from_spans(spans => $span);
+	#print Dumper($spanset_bfilter->as_list);
+
+	my $iter = $spanset_bfilter->iterator;
+           while ( my $dt = $iter->next ) {
+               # $dt is a DateTime::Span
+               print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
+           }
+}
+
+# use DateTime::Span and DateTime::SpanSet to define all of the blackout SpanSets per user
+
 # pretty-print the time
 sub hm {
 	my $t = $_[0];
 	return "no_time" unless $t =~ /^(\d\d)(\d\d)(\d\d)$/;
 	return "$1:$2";
 }
+
+# FIXME
+build_blackout();
+exit;
 
 my $memo = " (" . join(' ', @ARGV) . ")";
 our($opt_i, $opt_p, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
@@ -63,9 +123,9 @@ my $category = '[Metered consumables:Fuel Tank]';
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
 my $day;
-foreach(sort keys $hash) {
+foreach(sort keys @$hash) {
 	if (ref $hash->{$_} eq "ARRAY") {
-		$day = shift $hash->{$_};
+		$day = shift @{$hash->{$_}};
 	} else {
 		print Dumper($hash->{$_});
 		next;
