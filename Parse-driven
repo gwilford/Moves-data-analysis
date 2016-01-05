@@ -7,11 +7,11 @@ use Finance::QIF;
 use Time::Local;
 use Getopt::Std;
 use POSIX qw(strftime);
+use JSON "decode_json";
 
 use DateTime;
 use DateTime::Span;
 use DateTime::SpanSet;
-use DateTime::Format::Strptime;
 use DateTime::Format::ISO8601;
 
 my $kmtomile = 0.621371192;
@@ -28,11 +28,6 @@ sub usage {
 }
 
 sub build_blackout {
-	#my $parse = DateTime::Format::Strptime->new(
-	#	pattern => '%F %T',
-	#	on_error => 'croak',
-	#);
-
 	my $file = "blackout.csv";
 	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
  	
@@ -67,17 +62,12 @@ sub build_blackout {
 	$spanset_bfilter = DateTime::SpanSet->from_spans(spans => $span);
 
 	#print Dumper($spanset_bfilter->as_list);
-	my $iter = $spanset_bfilter->iterator;
-	while (my $dt = $iter->next) {
-		# $dt is a DateTime::Span
-		print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
-        }
+	#my $iter = $spanset_bfilter->iterator;
+	#while (my $dt = $iter->next) {
+	#	# $dt is a DateTime::Span
+	#	print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
+        #}
 }
-
-# FIXME
-# use DateTime::Span and DateTime::SpanSet to define all of the blackout SpanSets per user
-build_blackout();
-exit;
 
 my $memo = " (" . join(' ', @ARGV) . ")";
 our($opt_i, $opt_p, $opt_s, $opt_e);
@@ -98,21 +88,20 @@ $json =~ s/\},\]/\}\]/; # at end
 $json =~ s/,,/,/g;
 
 # translate the JSON into a multi-level perl structure
-sub moves_json {
-	use JSON "decode_json";
-	return decode_json($json);
-}
-my $hash = moves_json();
+my $hash = decode_json($json);
+undef($json);
 
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
 my $payee = "Driving";
 my $category = '[Metered consumables:Fuel Tank]';
 
+build_blackout();
+
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
 my $day;
-foreach(sort keys @$hash) {
+foreach(sort keys %$hash) {
 	if (ref $hash->{$_} eq "ARRAY") {
 		$day = shift @{$hash->{$_}};
 	} else {
