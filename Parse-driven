@@ -18,6 +18,7 @@ my $kmtomile = 0.621371192;
 my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
 my $miles_tot = 0;
 my $spanset_bfilter;
+my $dtparse = DateTime::Format::ISO8601->new;
 
 sub usage {
 	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ] [ -x|y <HHMMSS> ] [ -d <days_regex> ]\n" .
@@ -35,7 +36,6 @@ sub build_blackout {
 	#	pattern => '%F %T',
 	#	on_error => 'croak',
 	#);
-	my $parse = DateTime::Format::ISO8601->new;
 
 	my $file = "blackout.csv";
 	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
@@ -51,9 +51,9 @@ sub build_blackout {
 		my $dow = $fields[2];
 		my $time1 = $fields[3] ? "T" . $fields[3] : '';
 		my $time2 = $fields[5] ? "T" . $fields[5] : 'T23:59:59';
-		my $dt1 = $parse->parse_datetime($fields[4] . $time1);
-		my $dt2 = $parse->parse_datetime($fields[4] . $time2);
-		my $dt3 = $parse->parse_datetime($fields[6] . $time1);
+		my $dt1 = $dtparse->parse_datetime($fields[4] . $time1);
+		my $dt2 = $dtparse->parse_datetime($fields[4] . $time2);
+		my $dt3 = $dtparse->parse_datetime($fields[6] . $time1);
 
 		do {
 			# does this date match DoW?
