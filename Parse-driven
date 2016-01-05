@@ -21,14 +21,11 @@ my $spanset_bfilter;
 my $dtparse = DateTime::Format::ISO8601->new;
 
 sub usage {
-	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ] [ -x|y <HHMMSS> ] [ -d <days_regex> ]\n" .
+	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ]\n" .
 	    "       -i: output daily summary instead of QIF\n" .
 	    "       -p: add freeform <text> to QIF memo\n" .
 	    "       -s: ignore dates before YYYYMMDD\n" .
-	    "       -e: ignore dates after YYYYMMDD\n" .
-	    "       -x: ignore activities starting before HHMMSS on any day\n" .
-	    "       -y: ignore activities starting after HHMMSS on any day\n" .
-	    "       -d: ignore days of the week not matching <days_regex>\n";
+	    "       -e: ignore dates after YYYYMMDD\n";
 }
 
 sub build_blackout {
@@ -133,9 +130,6 @@ foreach(sort keys @$hash) {
 
 	#print Dumper($day);
 	my $total = 0;
-	# trp time range in HHMMSS
-	my $start = 235959;
-	my $end = 0;
 
 	# within date range?
 	next unless (!$opt_s || $day->{date} ge $opt_s);
