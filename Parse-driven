@@ -135,7 +135,18 @@ foreach(sort keys %$hash) {
 			
 			# check this activity doesn't fall within the blackout times
 			# FIXME should raise a blackout timing warning if intersects != contains
-			next if ($spanset_bfilter->intersects($dtactivity));
+			my $intersects = $spanset_bfilter->intersects($dtactivity);
+			my $contains = $spanset_bfilter->contains($dtactivity);
+			warn "activity intersects but not contained" if ($intersects > $contains);
+			if ($intersects) {
+				if ($opt_i) {
+					printf "%s (%s-%s) = ---.-- miles (%6.2f Km)\n",
+					       $dtstart->ymd, $dtstart->hms, $dtend->hms, 
+					       $activity->{distance} / 1000;
+				}
+				next;
+			}		
+			#next if ($spanset_bfilter->intersects($dtactivity));
 			#next if ($spanset_bfilter->contains($dt));
 			
 			# keep track of first/last daily activity times
@@ -158,7 +169,7 @@ foreach(sort keys %$hash) {
 	$miles_tot += $miles;
 
 	if ($opt_i) {
-		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $dtfirst->dmy, $dtfirst->hms, $dtlast->hms, $miles, $km;
+		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $dtfirst->ymd, $dtfirst->hms, $dtlast->hms, $miles, $km;
 		next;
 	}
 
