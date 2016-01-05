@@ -151,20 +151,14 @@ foreach(sort keys @$hash) {
 			next unless ($activity->{activity} eq "trp" ||
 				     $activity->{activity} eq "transport");
 
-			# earliest start...
-			$activity->{startTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|\+|\-)/;
-			my $stm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
-			next unless (!$opt_x || $stm ge $opt_x);
-			next unless (!$opt_y || $stm le $opt_y);
-			# could we explicitly set $start = strftime(...) ??
-			# only if start times are always progressive...
-			$start = $stm if ($stm < $start);
-
-			# ...to latest end
-			$activity->{endTime} =~ /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z|\+|\-)/;
-			my $etm = strftime("%H%M%S", localtime(timegm($6, $5, $4, $3, $2-1, $1)));
-			$end = $etm if ($etm > $end);
-
+			my $dtstart = $dtparse->parse_datetime($activity->{startTime});
+			my $dtend = $dtparse->parse_datetime($activity->{endTime});
+			my $dtactivity = DateTime::Span->from_datetimes(start => $dtstart, end => $dtend);
+			
+			# check this activity doesn't fall within the blackout times
+			# FIXME should raise a blackout timing warning if intersects != contains
+			next if ($spanset_bfilter->intersects($dtactivity));
+			#next if ($spanset_bfilter->contains($dt));
 			$total += $activity->{distance};
 		}
 	}
