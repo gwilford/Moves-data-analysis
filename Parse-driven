@@ -75,13 +75,6 @@ sub build_blackout {
         }
 }
 
-# pretty-print the time
-sub hm {
-	my $t = $_[0];
-	return "no_time" unless $t =~ /^(\d\d)(\d\d)(\d\d)$/;
-	return "$1:$2";
-}
-
 # FIXME
 # use DateTime::Span and DateTime::SpanSet to define all of the blackout SpanSets per user
 build_blackout();
@@ -134,6 +127,9 @@ foreach(sort keys @$hash) {
 	# within date range?
 	next unless (!$opt_s || $day->{date} ge $opt_s);
 	next unless (!$opt_e || $day->{date} le $opt_e);
+	
+	my $dtfirst = DateTime->now;
+	my $dtlast = DateTime->from_epoch(epoch => 0);
 
 	while (my $segment = shift @{$day->{segments}} ) {
 		# Is this a move entry?
@@ -153,21 +149,18 @@ foreach(sort keys @$hash) {
 			# FIXME should raise a blackout timing warning if intersects != contains
 			next if ($spanset_bfilter->intersects($dtactivity));
 			#next if ($spanset_bfilter->contains($dt));
+			
+			# keep track of first/last daily activity times
+			# might need to use $dt->clone
+			$dtfirst = $dtstart if ($dtstart < $dtfirst);
+			$dtlast = $dtend if ($dtend > $dtlast);
+			
 			$total += $activity->{distance};
 		}
 	}
 
 	# any transport today?
 	next unless ($total);
-
-	my $datestart = $day->{date} . $start;
-	die "'$datestart'" unless ($datestart =~ /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
-	my $qifdate = "$3/$2/$1";
-	my $wday = (localtime(timegm(0,0,0,$3,$2-1,$1)))[6];
-	my $date = localtime(timegm($6,$5,$4,$3,$2-1,$1));
-
-	# matches day(s) of week?
-	next unless (!$opt_d || $wdays[$wday] =~ /$opt_d/i);
 
 	# issue a header line if we haven't already done so
 	$out->header($header) unless ($opt_i || $miles_tot);
@@ -177,17 +170,17 @@ foreach(sort keys @$hash) {
 	$miles_tot += $miles;
 
 	if ($opt_i) {
-		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $date, hm($start), hm($end), $miles, $km;
+		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $dtfirst->dmy, $dtfirst->hms, $dtlast->hms, $miles, $km;
 		next;
 	}
 
 	# create a QIF transaction
 	my $record = {
 		header => $header,
-		date => $qifdate,
+		date => $dtfirst->ymd('/'),
 		transaction => sprintf("%.3f", $miles),
 		payee => $payee,
-		memo => hm($start) . "-" . hm($end) . $memo,
+		memo => $dtfirst->hms . "-" . $dtlast->hms . $memo,
 		category => $category,
 	};
 	# write out the QIF transaction
