@@ -15,7 +15,6 @@ use DateTime::Format::Strptime;
 use DateTime::Format::ISO8601;
 
 my $kmtomile = 0.621371192;
-my @wdays = qw(Sun Mon Tue Wed Thu Fri Sat);
 my $miles_tot = 0;
 my $spanset_bfilter;
 my $dtparse = DateTime::Format::ISO8601->new;
@@ -81,8 +80,8 @@ build_blackout();
 exit;
 
 my $memo = " (" . join(' ', @ARGV) . ")";
-our($opt_i, $opt_p, $opt_s, $opt_e, $opt_d, $opt_x, $opt_y);
-getopts('ip:s:e:d:x:y:') || usage();
+our($opt_i, $opt_p, $opt_s, $opt_e);
+getopts('ip:s:e:') || usage();
 
 # set the IFS (required for human-readable JSON data sources)
 my $fs = $/;
