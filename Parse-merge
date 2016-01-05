@@ -1,0 +1,201 @@
+#!/opt/local/bin/perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use Finance::QIF;
+use Time::Local;
+use Getopt::Std;
+use POSIX qw(strftime);
+use JSON "decode_json";
+
+use DateTime;
+use DateTime::Span;
+use DateTime::SpanSet;
+use DateTime::Format::ISO8601;
+
+my $kmtomile = 0.621371192;
+my $miles_tot = 0;
+my $spanset_bfilter;
+my $dtparse = DateTime::Format::ISO8601->new;
+
+sub usage {
+	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ]\n" .
+	    "       -i: output daily summary instead of QIF\n" .
+	    "       -p: add freeform <text> to QIF memo\n" .
+	    "       -s: ignore dates before YYYYMMDD\n" .
+	    "       -e: ignore dates after YYYYMMDD\n";
+}
+
+sub build_blackout {
+	my $file = "blackout.csv";
+	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
+ 	
+	my $span;
+	# drop the header row
+	<$data>;
+	while (<$data>) {
+		s/\s+$//;
+		my @fields = split(',');
+
+		# notes, who, DoW, start time, start date, end time, end date
+		my $dow = $fields[2];
+		my $time1 = $fields[3] ? "T" . $fields[3] : '';
+		my $time2 = $fields[5] ? "T" . $fields[5] : 'T23:59:59';
+		my $dt1 = $dtparse->parse_datetime($fields[4] . $time1);
+		my $dt2 = $dtparse->parse_datetime($fields[4] . $time2);
+		my $dt3 = $dtparse->parse_datetime($fields[6] . $time1);
+
+		do {
+			# does this date match DoW?
+			next unless(!$dow || $dt1->day_abbr() =~ /$dow/i);
+			push @$span, DateTime::Span->from_datetimes(start => $dt1->clone(), 
+								    end   => $dt2->clone());
+			# cycle days in each dates range
+			$dt1->add(days => 1);
+			$dt2->add(days => 1);
+		} until ($dt2 > $dt3);
+	}
+	close($data);
+
+	# FIXME need to manage different who's
+	$spanset_bfilter = DateTime::SpanSet->from_spans(spans => $span);
+
+	#print Dumper($spanset_bfilter->as_list);
+	#my $iter = $spanset_bfilter->iterator;
+	#while (my $dt = $iter->next) {
+	#	# $dt is a DateTime::Span
+	#	print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
+        #}
+}
+
+my $memo = " (" . join(' ', @ARGV) . ")";
+our($opt_i, $opt_p, $opt_s, $opt_e);
+getopts('ip:s:e:') || usage();
+
+# set the IFS (required for human-readable JSON data sources)
+my $fs = $/;
+undef $/;
+# suck in the JSON on stdin
+my $json = <STDIN>;
+$/ = $fs;
+
+# clean up rogue periods from Moves Export data
+$json =~ s/\[,\{/\[\{/; # at start
+$json =~ s/\},\]/\}\]/; # at end
+
+# remove double periods
+$json =~ s/,,/,/g;
+
+# translate the JSON into a multi-level perl structure
+my $hash = decode_json($json);
+undef($json);
+
+my $out = Finance::QIF->new(file => ">-",);
+my $header = "Type:Bank";
+my $payee = "Driving";
+my $category = '[Metered consumables:Fuel Tank]';
+
+build_blackout();
+
+# Parse the Moves data structure
+# Pull out and sum-up the daily transport distances
+my $spans;
+foreach(sort keys %$hash) {
+	my $day = shift @{$hash->{$_}};
+	my $total = 0;
+
+	# within date range?
+	next unless (!$opt_s || $day->{date} ge $opt_s);
+	next unless (!$opt_e || $day->{date} le $opt_e);
+	
+	my $dtfirst = DateTime->now;
+	my $dtlast = DateTime->from_epoch(epoch => 0);
+
+	while (my $segment = shift @{$day->{segments}} ) {
+		# Is this a move entry?
+		next unless ($segment->{type} eq 'move');
+
+		# Moves time format is <YYYY><MM><DD>T<HH><MM><SS>Z
+		while (my $activity = shift @{$segment->{activities}}) {
+			# Is this a transport entry?
+			next unless ($activity->{activity} eq "trp" ||
+				     $activity->{activity} eq "transport");
+
+			my $dtstart = $dtparse->parse_datetime($activity->{startTime});
+			my $dtend = $dtparse->parse_datetime($activity->{endTime});
+			my $dtactivity = DateTime::Span->from_datetimes(start => $dtstart, 
+									end => $dtend);
+
+			# can record attributes directly within the DateTime::Span object
+			# ...but it doesn't survive the SpanSet method
+			$dtactivity->{distance} = $activity->{distance};
+			#print $dtactivity->{distance} . "\n";
+			# hiding distance in the nanosecond attribute is real clunky
+			# but survives the SpanSet and can hold integer values < 1 billion
+			$dtstart->set_nanosecond($activity->{distance});
+
+			# check this activity doesn't fall within the blackout times
+			# FIXME should raise a blackout timing warning if intersects != contains
+			my $intersects = $spanset_bfilter->intersects($dtactivity);
+			my $contains = $spanset_bfilter->contains($dtactivity);
+			warn "activity intersects but not contained" if ($intersects > $contains);
+			if ($intersects) {
+				if ($opt_i) {
+					printf "%s (%s-%s) = ---.-- miles (%6.2f Km)\n",
+					       $dtstart->ymd, $dtstart->hms, $dtend->hms, 
+					       $activity->{distance} / 1000;
+				}
+				next;
+			}		
+			#next if ($spanset_bfilter->intersects($dtactivity));
+			#next if ($spanset_bfilter->contains($dt));
+			
+			# keep track of first/last daily activity times
+			# might need to use $dt->clone
+			$dtfirst = $dtstart if ($dtstart < $dtfirst);
+			$dtlast = $dtend if ($dtend > $dtlast);
+			
+			push @$spans, $dtactivity;
+			$total += $activity->{distance};
+		}
+	}
+
+	# any transport today?
+	next unless ($total);
+
+	# issue a header line if we haven't already done so
+	$out->header($header) unless ($opt_i || $miles_tot);
+
+	my $km = $total / 1000;
+	my $miles = $km * $kmtomile;
+	$miles_tot += $miles;
+
+	if ($opt_i) {
+		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $dtfirst->ymd, $dtfirst->hms, $dtlast->hms, $miles, $km;
+		next;
+	}
+
+	# create a QIF transaction
+	my $record = {
+		header => $header,
+		date => $dtfirst->ymd('/'),
+		transaction => sprintf("%.3f", $miles),
+		payee => $payee,
+		memo => $dtfirst->hms . "-" . $dtlast->hms . $memo,
+		category => $category,
+	};
+	# write out the QIF transaction
+	$out->write($record);
+
+}
+my $spanset = DateTime::SpanSet->from_spans(spans => $spans);
+print Dumper($spanset->as_list);
+#print Dumper($spanset);
+
+# close the QIF
+if ($opt_i) {
+	printf "Total miles travelled during period:     %6.2f\n", $miles_tot;
+} else {
+	$out->close;
+}
