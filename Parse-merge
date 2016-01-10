@@ -18,6 +18,16 @@ my $kmtomile = 0.621371192;
 my $miles_tot = 0;
 my $dtparse = DateTime::Format::ISO8601->new;
 my %users;
+my %transport;
+
+my $memo = " (" . join(' ', @ARGV) . ")";
+our($opt_i, $opt_p, $opt_s, $opt_e);
+getopts('ip:s:e:') || usage();
+
+my $out = Finance::QIF->new(file => ">-",);
+my $header = "Type:Bank";
+my $payee = "Driving";
+my $category = '[Metered consumables:Fuel Tank]';
 
 sub usage {
 	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ]\n" .
@@ -27,6 +37,7 @@ sub usage {
 	    "       -e: ignore dates after YYYYMMDD\n";
 }
 
+# read in the exceptions and build blackout files per user
 sub build_blackout {
 	my ($file) = @_;
 	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
@@ -58,8 +69,9 @@ sub build_blackout {
 			next unless(!$dow || $dt1->day_abbr() =~ /$dow/i);
 			foreach (keys %users) {
 				if ($users{$_} =~ /$who/i) {
-					push @{$span{$_}}, DateTime::Span->from_datetimes(start => $dt1->clone(), 
-								    			end   => $dt2->clone());
+					push @{$span{$_}}, 
+						DateTime::Span->from_datetimes(start => $dt1->clone(), 
+					    				       end   => $dt2->clone());
 				}
 			}
 			# cycle days in each dates range
@@ -85,10 +97,7 @@ sub build_blackout {
         #}
 }
 
-my $memo = " (" . join(' ', @ARGV) . ")";
-our($opt_i, $opt_p, $opt_s, $opt_e);
-getopts('ip:s:e:') || usage();
-
+# read in the per-user Moves extract files
 sub read_file {
 	my ($user) = @_;
 	my $file =  "extract" . $user . ".json";
@@ -97,41 +106,16 @@ sub read_file {
 	# set the IFS (required for human-readable JSON data sources)
 	my $fs = $/;
 	undef $/;
-	# suck in the JSON on stdin
+	# suck in the JSON
 	my $json = <$data>;
 	$/ = $fs;
+
 	close($data);
-
-	# clean up rogue periods from Moves Export data
-	#$json =~ s/\[,\{/\[\{/; # at start
-	#$json =~ s/\},\]/\}\]/; # at end
-
-	# remove double periods
-	#$json =~ s/,,/,/g;
-
-	# translate the JSON into a multi-level perl structure
 	return(decode_json($json));
 }
 
-my $out = Finance::QIF->new(file => ">-",);
-my $header = "Type:Bank";
-my $payee = "Driving";
-my $category = '[Metered consumables:Fuel Tank]';
-
-my $filters = build_blackout("blackout.csv");
-# process each user and *then* manage intersections
-# FIXME
-foreach(keys %users) {
-	my $hash = read_file($_);
-	my $spans = transport($hash, $filters->{$_}, undef);
-	my $spanset = DateTime::SpanSet->from_spans(spans => $spans);
-}
-#my $spans = transport($hash[0], NULL);
-#transport($hash[1], $spans);
-
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
-
 sub transport {
 	my ($hash, $filter, $merge) = @_;
 	my $spans;
@@ -161,10 +145,6 @@ sub transport {
 				my $dtactivity = DateTime::Span->from_datetimes(start => $dtstart, 
 										end => $dtend);
 
-				# can record attributes directly within the DateTime::Span object
-				# ...but it doesn't survive the SpanSet method
-				$dtactivity->{distance} = $activity->{distance};
-				#print $dtactivity->{distance} . "\n";
 				# hiding distance in the nanosecond attribute is real clunky
 				# but survives the SpanSet and can hold integer values < 1 billion
 				$dtstart->set_nanosecond($activity->{distance});
@@ -191,7 +171,7 @@ sub transport {
 				$dtlast = $dtend if ($dtend > $dtlast);
 			
 				push @$spans, $dtactivity;
-				$total += $activity->{distance};
+				#$total += $activity->{distance};
 			}
 		}
 
@@ -225,6 +205,37 @@ sub transport {
 	}
 	return($spans);
 }
+
+sub cross_ref {
+	my ($user, @others) = @_;
+
+	#print Dumper($spanset_bfilter->as_list);
+	my $iter = $transport{$user}->iterator;
+	while (my $dt = $iter->next) {
+		# $dt is a DateTime::Span
+		print $dt->start->datetime . " - " . $dt->end->datetime . "\n";
+        }
+}
+
+my $filters = build_blackout("blackout.csv");
+
+# process each user and *then* manage intersections
+# FIXME
+my @u = keys %users;
+foreach(@u) {
+	print $_ ."\n";
+	my $hash = read_file($_);
+	my $spans = transport($hash, $filters->{$_}, undef);
+	$transport{$_} = DateTime::SpanSet->from_spans(spans => $spans);
+}
+
+# pass first key as arg1 and array of remaining key(s) as arg2
+cross_ref(shift(@u), @u);
+
+print Dumper(@u) . shift(@u) . Dumper(@u) . "\n"; 
+
+#my $spans = transport($hash[0], NULL);
+#transport($hash[1], $spans);
 
 #print Dumper($spanset->as_list);
 #print Dumper($spanset);
