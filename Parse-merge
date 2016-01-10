@@ -17,6 +17,7 @@ use DateTime::Format::ISO8601;
 my $kmtomile = 0.621371192;
 my $miles_tot = 0;
 my $dtparse = DateTime::Format::ISO8601->new;
+my %users;
 
 sub usage {
 	die "Usage: $0 [ -i ] [ -p <text> ] [ -s|e <YYYYMMDD> ]\n" .
@@ -30,7 +31,8 @@ sub build_blackout {
 	my ($file) = @_;
 	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
  	
-	my $span;
+	my %span;
+	my $ss;
 	# drop the header row
 	<$data>;
 	while (<$data>) {
@@ -38,7 +40,13 @@ sub build_blackout {
 		my @fields = split(',');
 
 		# notes, who, DoW, start time, start date, end time, end date
+		my $who = $fields[1];
 		my $dow = $fields[2];
+		if ($dow =~ /^alias$/i) {
+			# special alias line
+			$users{$fields[0]} = $who;
+			next;
+		}
 		my $time1 = $fields[3] ? "T" . $fields[3] : '';
 		my $time2 = $fields[5] ? "T" . $fields[5] : 'T23:59:59';
 		my $dt1 = $dtparse->parse_datetime($fields[4] . $time1);
@@ -48,8 +56,12 @@ sub build_blackout {
 		do {
 			# does this date match DoW?
 			next unless(!$dow || $dt1->day_abbr() =~ /$dow/i);
-			push @$span, DateTime::Span->from_datetimes(start => $dt1->clone(), 
-								    end   => $dt2->clone());
+			foreach (keys %users) {
+				if ($users{$_} =~ /$who/i) {
+					push @{$span{$_}}, DateTime::Span->from_datetimes(start => $dt1->clone(), 
+								    			end   => $dt2->clone());
+				}
+			}
 			# cycle days in each dates range
 			$dt1->add(days => 1);
 			$dt2->add(days => 1);
@@ -57,8 +69,13 @@ sub build_blackout {
 	}
 	close($data);
 
+	foreach (keys %users) {
+		$ss->{$_} = DateTime::SpanSet->from_spans(spans => $span{$_});
+	}
+
 	# FIXME need to manage different who's
-	return(DateTime::SpanSet->from_spans(spans => $span));
+	#return(DateTime::SpanSet->from_spans(spans => $span));
+	return($ss);
 
 	#print Dumper($spanset_bfilter->as_list);
 	#my $iter = $spanset_bfilter->iterator;
@@ -95,8 +112,14 @@ my $header = "Type:Bank";
 my $payee = "Driving";
 my $category = '[Metered consumables:Fuel Tank]';
 
-my $filter = build_blackout("blackout.csv");
-my $spans = transport($hash, $filter, undef);
+my $filters = build_blackout("blackout.csv");
+# process each user and *then* manage intersections
+# FIXME
+foreach(keys %users) {
+	my $hash = read_file($_);
+	my $spans = transport($hash, $filters->{$_}, undef);
+	my $spanset = DateTime::SpanSet->from_spans(spans => $spans);
+}
 #my $spans = transport($hash[0], NULL);
 #transport($hash[1], $spans);
 
@@ -197,7 +220,6 @@ sub transport {
 	return($spans);
 }
 
-my $spanset = DateTime::SpanSet->from_spans(spans => $spans);
 #print Dumper($spanset->as_list);
 #print Dumper($spanset);
 
