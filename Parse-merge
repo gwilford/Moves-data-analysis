@@ -89,23 +89,29 @@ my $memo = " (" . join(' ', @ARGV) . ")";
 our($opt_i, $opt_p, $opt_s, $opt_e);
 getopts('ip:s:e:') || usage();
 
-# set the IFS (required for human-readable JSON data sources)
-my $fs = $/;
-undef $/;
-# suck in the JSON on stdin
-my $json = <STDIN>;
-$/ = $fs;
+sub read_file {
+	my ($user) = @_;
+	my $file =  "extract" . $user . ".json";
+	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
 
-# clean up rogue periods from Moves Export data
-$json =~ s/\[,\{/\[\{/; # at start
-$json =~ s/\},\]/\}\]/; # at end
+	# set the IFS (required for human-readable JSON data sources)
+	my $fs = $/;
+	undef $/;
+	# suck in the JSON on stdin
+	my $json = <$data>;
+	$/ = $fs;
+	close($data);
 
-# remove double periods
-$json =~ s/,,/,/g;
+	# clean up rogue periods from Moves Export data
+	#$json =~ s/\[,\{/\[\{/; # at start
+	#$json =~ s/\},\]/\}\]/; # at end
 
-# translate the JSON into a multi-level perl structure
-my $hash = decode_json($json);
-undef($json);
+	# remove double periods
+	#$json =~ s/,,/,/g;
+
+	# translate the JSON into a multi-level perl structure
+	return(decode_json($json));
+}
 
 my $out = Finance::QIF->new(file => ">-",);
 my $header = "Type:Bank";
