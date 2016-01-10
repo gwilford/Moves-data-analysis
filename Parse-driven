@@ -132,7 +132,7 @@ foreach(sort keys %$hash) {
 			my $dtstart = $dtparse->parse_datetime($activity->{startTime});
 			my $dtend = $dtparse->parse_datetime($activity->{endTime});
 			my $dtactivity = DateTime::Span->from_datetimes(start => $dtstart, end => $dtend);
-			
+
 			# check this activity doesn't fall within the blackout times
 			# FIXME should raise a blackout timing warning if intersects != contains
 			my $intersects = $spanset_bfilter->intersects($dtactivity);

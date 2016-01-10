@@ -16,7 +16,6 @@ use DateTime::Format::ISO8601;
 
 my $kmtomile = 0.621371192;
 my $miles_tot = 0;
-my $spanset_bfilter;
 my $dtparse = DateTime::Format::ISO8601->new;
 
 sub usage {
@@ -28,7 +27,7 @@ sub usage {
 }
 
 sub build_blackout {
-	my $file = "blackout.csv";
+	my ($file) = @_;
 	open(my $data, '<', $file) or die "Could not open '$file' $!\n";
  	
 	my $span;
@@ -59,7 +58,7 @@ sub build_blackout {
 	close($data);
 
 	# FIXME need to manage different who's
-	$spanset_bfilter = DateTime::SpanSet->from_spans(spans => $span);
+	return(DateTime::SpanSet->from_spans(spans => $span));
 
 	#print Dumper($spanset_bfilter->as_list);
 	#my $iter = $spanset_bfilter->iterator;
@@ -96,101 +95,110 @@ my $header = "Type:Bank";
 my $payee = "Driving";
 my $category = '[Metered consumables:Fuel Tank]';
 
-build_blackout();
+my $filter = build_blackout("blackout.csv");
+my $spans = transport($hash, $filter, undef);
+#my $spans = transport($hash[0], NULL);
+#transport($hash[1], $spans);
 
 # Parse the Moves data structure
 # Pull out and sum-up the daily transport distances
-my $spans;
-foreach(sort keys %$hash) {
-	my $day = shift @{$hash->{$_}};
-	my $total = 0;
 
-	# within date range?
-	next unless (!$opt_s || $day->{date} ge $opt_s);
-	next unless (!$opt_e || $day->{date} le $opt_e);
+sub transport {
+	my ($hash, $filter, $merge) = @_;
+	my $spans;
+	foreach(sort keys %$hash) {
+		my $day = shift @{$hash->{$_}};
+		my $total = 0;
+
+		# within date range?
+		next unless (!$opt_s || $day->{date} ge $opt_s);
+		next unless (!$opt_e || $day->{date} le $opt_e);
 	
-	my $dtfirst = DateTime->now;
-	my $dtlast = DateTime->from_epoch(epoch => 0);
+		my $dtfirst = DateTime->now;
+		my $dtlast = DateTime->from_epoch(epoch => 0);
 
-	while (my $segment = shift @{$day->{segments}} ) {
-		# Is this a move entry?
-		next unless ($segment->{type} eq 'move');
+		while (my $segment = shift @{$day->{segments}} ) {
+			# Is this a move entry?
+			next unless ($segment->{type} eq 'move');
+	
+			# Moves time format is <YYYY><MM><DD>T<HH><MM><SS>Z
+			while (my $activity = shift @{$segment->{activities}}) {
+				# Is this a transport entry?
+				next unless ($activity->{activity} eq "trp" ||
+					     $activity->{activity} eq "transport");
+	
+				my $dtstart = $dtparse->parse_datetime($activity->{startTime});
+				my $dtend = $dtparse->parse_datetime($activity->{endTime});
+				my $dtactivity = DateTime::Span->from_datetimes(start => $dtstart, 
+										end => $dtend);
 
-		# Moves time format is <YYYY><MM><DD>T<HH><MM><SS>Z
-		while (my $activity = shift @{$segment->{activities}}) {
-			# Is this a transport entry?
-			next unless ($activity->{activity} eq "trp" ||
-				     $activity->{activity} eq "transport");
+				# can record attributes directly within the DateTime::Span object
+				# ...but it doesn't survive the SpanSet method
+				$dtactivity->{distance} = $activity->{distance};
+				#print $dtactivity->{distance} . "\n";
+				# hiding distance in the nanosecond attribute is real clunky
+				# but survives the SpanSet and can hold integer values < 1 billion
+				$dtstart->set_nanosecond($activity->{distance});
 
-			my $dtstart = $dtparse->parse_datetime($activity->{startTime});
-			my $dtend = $dtparse->parse_datetime($activity->{endTime});
-			my $dtactivity = DateTime::Span->from_datetimes(start => $dtstart, 
-									end => $dtend);
-
-			# can record attributes directly within the DateTime::Span object
-			# ...but it doesn't survive the SpanSet method
-			$dtactivity->{distance} = $activity->{distance};
-			#print $dtactivity->{distance} . "\n";
-			# hiding distance in the nanosecond attribute is real clunky
-			# but survives the SpanSet and can hold integer values < 1 billion
-			$dtstart->set_nanosecond($activity->{distance});
-
-			# check this activity doesn't fall within the blackout times
-			# FIXME should raise a blackout timing warning if intersects != contains
-			my $intersects = $spanset_bfilter->intersects($dtactivity);
-			my $contains = $spanset_bfilter->contains($dtactivity);
-			warn "activity intersects but not contained" if ($intersects > $contains);
-			if ($intersects) {
-				if ($opt_i) {
-					printf "%s (%s-%s) = ---.-- miles (%6.2f Km)\n",
-					       $dtstart->ymd, $dtstart->hms, $dtend->hms, 
-					       $activity->{distance} / 1000;
-				}
-				next;
-			}		
-			#next if ($spanset_bfilter->intersects($dtactivity));
-			#next if ($spanset_bfilter->contains($dt));
+				# check this activity doesn't fall within the blackout times
+				# FIXME should raise a blackout timing warning if intersects != contains
+				my $intersects = $filter->intersects($dtactivity);
+				my $contains = $filter->contains($dtactivity);
+				warn "activity intersects but not contained" if ($intersects > $contains);
+				if ($intersects) {
+					if ($opt_i) {
+						printf "%s (%s-%s) = ---.-- miles (%6.2f Km)\n",
+						       $dtstart->ymd, $dtstart->hms, $dtend->hms, 
+						       $activity->{distance} / 1000;
+					}
+					next;
+				}		
+				#next if ($spanset_bfilter->intersects($dtactivity));
+				#next if ($spanset_bfilter->contains($dt));
 			
-			# keep track of first/last daily activity times
-			# might need to use $dt->clone
-			$dtfirst = $dtstart if ($dtstart < $dtfirst);
-			$dtlast = $dtend if ($dtend > $dtlast);
+				# keep track of first/last daily activity times
+				# might need to use $dt->clone
+				$dtfirst = $dtstart if ($dtstart < $dtfirst);
+				$dtlast = $dtend if ($dtend > $dtlast);
 			
-			push @$spans, $dtactivity;
-			$total += $activity->{distance};
+				push @$spans, $dtactivity;
+				$total += $activity->{distance};
+			}
 		}
+
+		# any transport today?
+		next unless ($total);
+
+		# issue a header line if we haven't already done so
+		$out->header($header) unless ($opt_i || $miles_tot);
+
+		my $km = $total / 1000;
+		my $miles = $km * $kmtomile;
+		$miles_tot += $miles;
+
+		if ($opt_i) {
+			printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", 
+				$dtfirst->ymd, $dtfirst->hms, $dtlast->hms, $miles, $km;
+			next;
+		}
+
+		# create a QIF transaction
+		my $record = {
+			header => $header,
+			date => $dtfirst->ymd('/'),
+			transaction => sprintf("%.3f", $miles),
+			payee => $payee,
+			memo => $dtfirst->hms . "-" . $dtlast->hms . $memo,
+			category => $category,
+		};
+		# write out the QIF transaction
+		$out->write($record);
 	}
-
-	# any transport today?
-	next unless ($total);
-
-	# issue a header line if we haven't already done so
-	$out->header($header) unless ($opt_i || $miles_tot);
-
-	my $km = $total / 1000;
-	my $miles = $km * $kmtomile;
-	$miles_tot += $miles;
-
-	if ($opt_i) {
-		printf "%s (%s-%s) = %6.2f miles (%6.2f Km)\n", $dtfirst->ymd, $dtfirst->hms, $dtlast->hms, $miles, $km;
-		next;
-	}
-
-	# create a QIF transaction
-	my $record = {
-		header => $header,
-		date => $dtfirst->ymd('/'),
-		transaction => sprintf("%.3f", $miles),
-		payee => $payee,
-		memo => $dtfirst->hms . "-" . $dtlast->hms . $memo,
-		category => $category,
-	};
-	# write out the QIF transaction
-	$out->write($record);
-
+	return($spans);
 }
+
 my $spanset = DateTime::SpanSet->from_spans(spans => $spans);
-print Dumper($spanset->as_list);
+#print Dumper($spanset->as_list);
 #print Dumper($spanset);
 
 # close the QIF
